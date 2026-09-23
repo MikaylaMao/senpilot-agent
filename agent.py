@@ -263,6 +263,12 @@ def _body(msg: email.message.Message) -> str:
                          if part.get_content_type() == "text/plain" and part.get_content_disposition() != "attachment")
     return msg.get_content() if msg.get_content_type() == "text/plain" else ""
 
+def sender_allowed(sender: str, allowed: set[str]) -> bool:
+    address = sender.casefold()
+    return not allowed or address in allowed or any(
+        rule.startswith("@") and address.endswith(rule) and address.count("@") == 1
+        for rule in allowed
+    )
 
 def poll_once() -> int:
     processed = 0
@@ -277,7 +283,7 @@ def poll_once() -> int:
                 continue
             msg = email.message_from_bytes(data[0][1], policy=email.policy.default)
             sender = email.utils.parseaddr(msg["From"] or "")[1]
-            if not sender or (allowed and sender.casefold() not in allowed):
+            if not sender or not sender_allowed(sender, allowed):
                 LOGGER.warning("Skipping unapproved sender %r", sender)
                 continue
             subject = str(msg["Subject"] or "")

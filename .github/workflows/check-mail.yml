@@ -1,0 +1,47 @@
+name: Check agent mailbox
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-mailbox
+  cancel-in-progress: false
+
+jobs:
+  check-mail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMAP_HOST: imap.gmail.com
+      IMAP_PORT: '993'
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: '465'
+      MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+      MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+      MAIL_FROM: ${{ secrets.MAIL_USERNAME }}
+      ALLOWED_SENDERS: ${{ vars.ALLOWED_SENDERS }}
+      MATTER_URL: https://uarb.novascotia.ca/fmi/webd/UARB15
+      HEADLESS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install agent and browser
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+      - name: Check required secrets
+        run: |
+          test -n "$MAIL_USERNAME" && test -n "$MAIL_PASSWORD" || {
+            echo 'Set MAIL_USERNAME and MAIL_PASSWORD in repository Actions secrets.' >&2
+            exit 1
+          }
+      - name: Process unread requests
+        run: python agent.py --once

@@ -1,10 +1,10 @@
 # Senpilot regulatory filing agent
 
-An email request names one matter (`M` plus five digits) and one document type. The agent searches the Nova Scotia UARB public documents database, reads matter metadata and the five tab counts, downloads up to ten documents from the selected tab, attaches a ZIP, and replies to the requester.
+Email the agent a Nova Scotia UARB matter number (`M` followed by five digits) and one document type: Exhibits, Key Documents, Other Documents, Transcripts, or Recordings. It finds the matter, counts files across those five categories, downloads up to ten files of the requested type, and replies with a ZIP and matter summary.
 
-## Quick evaluation: no email account required
+## Try it locally
 
-Requires Python 3.11+ and Chromium. From this directory:
+With Python 3.11+ installed:
 
 ```bash
 python -m venv .venv
@@ -14,38 +14,28 @@ python -m playwright install chromium
 python agent.py --demo "Other Documents from M12205"
 ```
 
-The command prints a matter summary and creates `M12205_other_documents.zip` in this directory. It does not connect to email or send a message. Inspect the archive with `unzip -l M12205_other_documents.zip`. The live public site must be available for retrieval. Run `python -m pytest -q` for the offline parsing, metadata, and ZIP checks.
+The demo prints the response and saves `M12205_other_documents.zip` locally; it does not send email. The public UARB site must be available. Run `python -m pytest -q` for offline checks.
 
-## End-to-end email evaluation
+## Email the hosted agent
 
-Use an evaluator-owned mailbox that supports IMAP and SMTP; for personal Gmail, an app password may be used where supported. Never put a real password in the submitted source or send it to the candidate.
+Send an email to the agent mailbox with a subject such as `Other Documents from M12205`. The body may be empty. The workflow in `.github/workflows/check-mail.yml` checks unread email every 15 minutes and replies to allowed senders. You can start a check immediately under **Actions → Check agent mailbox → Run workflow**. Scheduled GitHub Actions jobs may run late or fail; check the run log if a reply does not arrive.
 
-1. Copy `.env.example` to `.env` and fill `MAIL_USERNAME`, `MAIL_PASSWORD`, and `MAIL_FROM` with the evaluator's test mailbox. Keep the server settings for Gmail or adapt them to the selected provider. Set `ALLOWED_SENDERS` to the exact sender address used for the test. `.env` is ignored by Git.
-2. Send an **unread** message from that allowed address to the agent mailbox. Example subject: `Other Documents from M12205` (the body can be empty).
-3. Run `python agent.py --once` in the same directory. It processes currently unread requests once and prints `Processed 1 messages` on success.
-4. Check the sender inbox for a reply containing the matter summary and ZIP attachment. The ZIP has up to ten files from the chosen document type.
+To configure your own **private** GitHub repository:
 
-To keep checking for new messages, run `python agent.py` instead of `--once`. The process must remain running. The agent marks a request read after sending a response. SMTP failures leave it unread for retry, although an ambiguous SMTP disconnect can produce a duplicate reply.
+1. Add Actions repository **secrets** `MAIL_USERNAME` (the agent Gmail address) and `MAIL_PASSWORD` (its Gmail app password) under **Settings → Secrets and variables → Actions**.
+2. Add an Actions repository **variable** `ALLOWED_SENDERS`, for example `@senpilot.com,student@uwaterloo.ca`. Entries may be exact addresses or `@domain` rules. This compares the displayed From address and does not authenticate its owner. An empty value accepts any sender, so use an allowlist if the agent shares a personal mailbox.
+3. Send a new email from an allowed address. Open the next run's **Process unread requests** log and confirm `Processed 1 messages` and that the reply contains the ZIP. A successful run with `Processed 0 messages` means it found no unread allowed request.
 
-## Run continuously for reviewer emails
+Keep the real password in GitHub Actions secrets or a local `.env`; never commit `.env`. Stop any locally running agent with `docker compose down` before testing Actions so only one process reads the mailbox. The 15-minute schedule uses GitHub Actions minutes, including checks with no messages; monitor usage during evaluation.
 
-The included Dockerfile packages Python and Chromium; `compose.yaml` runs the polling process with automatic restart. Use a dedicated mailbox for reviewers rather than a personal inbox. Configure its credentials in `.env` on the host only, or enter them as private service variables in the hosting dashboard. Do not commit `.env` or include it in a Docker image.
+## Run email locally instead
 
-On an always-on machine with Docker Compose, run:
+Copy `.env.example` to `.env` and fill the mailbox credentials and `ALLOWED_SENDERS`. Send a new request email, then run `python agent.py --once` to check once, or `python agent.py` to keep polling while your computer is awake. `POLL_SECONDS` applies only to continuous polling, not GitHub Actions.
 
-```bash
-docker compose up -d --build
-docker compose logs -f agent
-```
+The optional `Dockerfile` and `compose.yaml` run that continuous mode on a machine with Docker: `docker compose up -d --build`; stop it with `docker compose down`. A sleeping laptop cannot check email, and only one agent should poll the mailbox at a time.
 
-Reviewers then email the configured `MAIL_USERNAME`. The service checks for unread mail every `POLL_SECONDS` (30 seconds by default) and replies with the ZIP. Stop with `docker compose down`. This requires the host to stay online and allow outbound IMAP (993), SMTP (465), and HTTPS traffic. Keep only one agent instance per mailbox to avoid competing reads. If `ALLOWED_SENDERS` is set, only those addresses can receive a response; for unknown reviewers, use an empty allowlist **only on a dedicated inbox**.
+## Notes
 
-For hosted deployment, build the Dockerfile as a continuously running background worker with one instance and no public HTTP port. Set the variables in `.env.example` in the host's private environment settings. Do not assume a generic free web service will work: some sleep when idle, and some hosting providers block SMTP outbound. Verify the provider supports ports 993 and 465, then send a real email to the hosted mailbox and check the attachment before sharing the address. This repository contains the worker package; creating a cloud service still requires the owner's hosting account and mailbox credentials.
+The working FileMaker URL is `https://uarb.novascotia.ca/fmi/webd/UARB15` (digit **1**); the challenge's `UARBI5` (letter **I**) showed “Database not available.” FileMaker renders document rows as you scroll, so the downloader tracks record numbers to collect up to ten distinct records. Two distinct records can contain identical PDF bytes. Other site sections such as Hearings and Related Matters are excluded from the five-category total. Site outages or layout changes can interrupt retrieval.
 
-## Site behavior and limits
-
-The challenge link uses `UARBI5` (letter I), which showed “Database not available.” The working database URL is `UARB15` (digit 1), now used by default. An end-to-end email request for M12205 / Other Documents was tested: it returned 10 PDFs in a ZIP, a total count of 62 across the five required categories, and matter metadata.
-
-FileMaker renders only some document rows at once, so the downloader scrolls and tracks document numbers. It stops with an error rather than silently sending fewer than ten when more files exist but cannot be reached. Different document records may point to identical PDF bytes; records are preserved separately. Matter metadata follows the visible header layout. Other sections such as Hearings and Related Matters are excluded from the total because the requested document types are the five listed in the challenge. The site can become temporarily unavailable; retry the local demo when it is back.
-
-No external language model is required for the constrained request format: deterministic extraction avoids interpreting arbitrary instructions inside emails and makes results reproducible. The orchestration is an agent loop from email to retrieval to response. Add LLM extraction only if broader phrasing becomes a product requirement, and validate its structured output against the same strict matter and type rules.
+The supported request format is intentionally parsed with fixed rules; the retrieval and email workflow does not require an external language model.

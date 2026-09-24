@@ -33,9 +33,3 @@ Keep the real password in GitHub Actions secrets or a local `.env`; never commit
 Copy `.env.example` to `.env` and fill the mailbox credentials and `ALLOWED_SENDERS`. Send a new request email, then run `python agent.py --once` to check once, or `python agent.py` to keep polling while your computer is awake. `POLL_SECONDS` applies only to continuous polling, not GitHub Actions.
 
 The optional `Dockerfile` and `compose.yaml` run that continuous mode on a machine with Docker: `docker compose up -d --build`; stop it with `docker compose down`. A sleeping laptop cannot check email, and only one agent should poll the mailbox at a time.
-
-## Notes
-
-The working FileMaker URL is `https://uarb.novascotia.ca/fmi/webd/UARB15` (digit **1**); the challenge's `UARBI5` (letter **I**) showed “Database not available.” FileMaker renders document rows as you scroll, so the downloader tracks record numbers to collect up to ten distinct records. Two distinct records can contain identical PDF bytes. Other site sections such as Hearings and Related Matters are excluded from the five-category total. Site outages or layout changes can interrupt retrieval.
-
-The supported request format is intentionally parsed with fixed rules; the retrieval and email workflow does not require an external language model.
